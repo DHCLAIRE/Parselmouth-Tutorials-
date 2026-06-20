@@ -9,7 +9,8 @@ The Vocal Toolkit tutorials are generated from the local plugin scripts in `/Use
 1. Install Parselmouth: `python -m pip install praat-parselmouth`.
 2. Point Python at the toolkit: `export VOCAL_TOOLKIT_DIR="/Users/neuroling/Downloads/Praat Vocal Toolkit/plugin_VocalToolkit"`.
 3. Read [Parselmouth patterns](tutorials/parselmouth-patterns.md).
-4. Pick a Parselmouth API member from [the Parselmouth index](tutorials/parselmouth/index.md) or a Vocal Toolkit command from [the toolkit index](tutorials/index.md).
+4. Try the workflow tutorial for [extracting Mandarin and Taiwanese F0/F1/F2](tutorials/mandarin-taiwanese-f0-f1-f2.md).
+5. Pick a Parselmouth API member from [the Parselmouth index](tutorials/parselmouth/index.md) or a Vocal Toolkit command from [the toolkit index](tutorials/index.md).
 
 ## What Is Included
 
