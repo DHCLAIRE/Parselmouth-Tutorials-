@@ -1,0 +1,90 @@
+# EQ 10 bands...
+
+- Praat source: `eq10bands.praat`
+- Tutorial type: `process`
+- Selection model: one or more selected `Sound` objects
+
+## What The Praat Script Does
+
+- Runs the logic in `eq10bands.praat` from the Vocal Toolkit plugin.
+- Intensity scaling or contour work.
+- Filtering or spectrum processing.
+- Mixing, convolution, or copying between sounds.
+- Batch processing over selected sounds.
+
+## Parameters
+
+| Praat form field | Type | Default | Python argument |
+| --- | --- | --- | --- |
+| `Band 1.  31.5 Hz (dB)` | `real` | `-24` | `band_1_31_5_hz` |
+| `Band 2.  63 Hz (dB)` | `real` | `-24` | `band_2_63_hz` |
+| `Band 3.  125 Hz (dB)` | `real` | `-24` | `band_3_125_hz` |
+| `Band 4.  250 Hz (dB)` | `real` | `-24` | `band_4_250_hz` |
+| `Band 5.  500 Hz (dB)` | `real` | `24` | `band_5_500_hz` |
+| `Band 6.  1000 Hz (dB)` | `real` | `24` | `band_6_1000_hz` |
+| `Band 7.  2000 Hz (dB)` | `real` | `24` | `band_7_2000_hz` |
+| `Band 8.  4000 Hz (dB)` | `real` | `-24` | `band_8_4000_hz` |
+| `Band 9.  8000 Hz (dB)` | `real` | `-24` | `band_9_8000_hz` |
+| `Band 10.  16000 Hz (dB)` | `real` | `-24` | `band_10_16000_hz` |
+| `Preview (Apply. Uncheck to publish)` | `boolean` | `1` | `preview` |
+
+## Parselmouth Tutorial
+
+### Faithful Toolkit Call
+
+This route asks Parselmouth to execute the original Praat script. It is the best starting point when the script uses complex object selection, relative includes, or Praat commands without a direct Python method.
+
+```python
+import os
+import parselmouth
+from parselmouth import praat
+
+TOOLKIT_DIR = os.environ.get("VOCAL_TOOLKIT_DIR", "/Users/neuroling/Downloads/Praat Vocal Toolkit/plugin_VocalToolkit")
+SCRIPT = os.path.join(TOOLKIT_DIR, "eq10bands.praat")
+
+sound = parselmouth.Sound("voice.wav")
+result = praat.run_file(sound, SCRIPT, -24, -24, -24, -24, 24, 24, 24, -24, -24, -24, 1)
+
+# Many Vocal Toolkit scripts leave the processed Sound selected.
+# Depending on the script, `result` can be a Praat object, a list-like result, or text output.
+print(result)
+```
+
+### Reusable Python Wrapper
+
+```python
+from src.vocal_toolkit_parselmouth import run_toolkit_script
+
+result = run_toolkit_script(
+    "eq10bands.praat",
+    "voice.wav",
+    # Positional arguments follow the Praat form order.
+    -24,  # Band 1.  31.5 Hz (dB)
+    -24,  # Band 2.  63 Hz (dB)
+    -24,  # Band 3.  125 Hz (dB)
+    -24,  # Band 4.  250 Hz (dB)
+    24,  # Band 5.  500 Hz (dB)
+    24,  # Band 6.  1000 Hz (dB)
+    24,  # Band 7.  2000 Hz (dB)
+    -24,  # Band 8.  4000 Hz (dB)
+    -24,  # Band 9.  8000 Hz (dB)
+    -24,  # Band 10.  16000 Hz (dB)
+    1,  # Preview (Apply. Uncheck to publish)
+)
+```
+
+## Translation Notes
+
+- EQ pages often convert sounds to spectra or use saved preset `Sound` objects from the toolkit `eq/` folder. Keep that folder next to the scripts when using `run_file`.
+- Choice and option-menu fields are safest as 1-based numeric indexes when supplied to `praat.run_file`; use the table above to map indexes to labels.
+- Boolean fields can be supplied as `1`/`0` or `True`/`False`.
+- Preview fields in the original plugin are UI-oriented. In Python tutorials, set preview-like fields to `0` when you want a published object name.
+- This script calls or includes: `batch.praat`, `declip.praat`, `preview1.inc`, `preview2.inc`, `workpost.praat`, `workpre.praat`.
+
+## Check Yourself
+
+1. Run the faithful toolkit call on a short WAV file.
+2. Save or inspect the returned object with `praat.call(result, "Save as WAV file...", "out.wav")` if the result is a `Sound`.
+3. Compare the output against Praat's menu command using the same parameter values.
+
+[Back to index](../index.md)
