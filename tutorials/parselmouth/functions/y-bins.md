@@ -1,0 +1,30 @@
+# y_bins
+
+- Kind: `method`
+- Available on: `Harmonicity`, `Intensity`, `Matrix`, `SampledXY`, `Sound`, `Spectrogram`, `Spectrum`, `Vector`
+- Vocal Toolkit coverage: **Not in Vocal Toolkit**
+
+## What It Does
+
+This public Parselmouth API member is documented in the official API reference.
+
+## Tutorial Pattern
+
+```python
+# Replace `obj` with an instance of Harmonicity.
+# Add required arguments according to the signature below.
+result = obj.y_bins()
+print(result)
+```
+
+## Signature
+
+```text
+y_bins(self: parselmouth.SampledXY) -> numpy.ndarray[numpy.float64]
+```
+
+## Toolkit Comparison
+
+No matching Vocal Toolkit command or script keyword was found.
+
+[Back to Parselmouth API index](../index.md)

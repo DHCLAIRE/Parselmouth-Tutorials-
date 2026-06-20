@@ -2,6 +2,8 @@
 """Generate Parselmouth tutorial pages for the Praat Vocal Toolkit scripts."""
 
 import os
+import json
+import keyword
 import re
 from pathlib import Path
 
@@ -9,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PLUGIN_DIR = Path("/Users/neuroling/Downloads/Praat Vocal Toolkit/plugin_VocalToolkit")
 PLUGIN_DIR = Path(os.environ.get("VOCAL_TOOLKIT_DIR", str(DEFAULT_PLUGIN_DIR))).expanduser()
+API_MANIFEST = ROOT / "data" / "parselmouth_api_manifest.json"
 
 
 FORM_FIELD_TYPES = {
@@ -106,6 +109,42 @@ TOPIC_NOTES = [
     ("eq", "EQ pages often convert sounds to spectra or use saved preset `Sound` objects from the toolkit `eq/` folder. Keep that folder next to the scripts when using `run_file`."),
     ("vocoder", "Vocoder and carrier/modulator pages combine several Praat objects. The `run_file` wrapper is usually the shortest faithful route."),
 ]
+
+DIRECT_TOOLKIT_EQUIVALENTS = {
+    "calculatevtl.praat": ["Formant.get_value_at_time", "praat.call"],
+    "changeduration.praat": ["Sound.lengthen"],
+    "changespeed.praat": ["Sound.resample", "Sound.override_sampling_frequency"],
+    "extractpitch.praat": ["Sound.to_pitch"],
+    "fixdc.praat": ["Sound.subtract_mean"],
+    "normalize.praat": ["Sound.scale_peak"],
+}
+
+API_TO_TOOLKIT_HINTS = {
+    "praat.call": "All faithful Vocal Toolkit wrappers use this when calling individual Praat commands.",
+    "praat.run_file": "All generated Vocal Toolkit extension wrappers use this to run the original scripts.",
+    "lengthen": "Covered by Change duration.",
+    "override_sampling_frequency": "Covered by Change speed.",
+    "resample": "Covered by Change speed and several preset scripts.",
+    "scale_peak": "Covered by Normalize.",
+    "scale_intensity": "Covered by intensity and effect scripts.",
+    "subtract_mean": "Covered by Fix DC offset.",
+    "to_formant_burg": "Related to formant-changing and vocal-tract calculations.",
+    "to_harmonicity": "Related to breathiness/voice-quality analysis workflows.",
+    "to_harmonicity_ac": "Related to breathiness/voice-quality analysis workflows.",
+    "to_harmonicity_cc": "Related to breathiness/voice-quality analysis workflows.",
+    "to_harmonicity_gne": "Related to breathiness/voice-quality analysis workflows.",
+    "to_intensity": "Covered by intensity contour and mixing scripts.",
+    "to_pitch": "Covered by Extract pitch and pitch-changing scripts.",
+    "to_pitch_ac": "Related to Extract pitch.",
+    "to_pitch_cc": "Related to Extract pitch.",
+    "to_pitch_shs": "Related to Extract pitch.",
+    "to_pitch_spinet": "Related to Extract pitch.",
+    "to_sound": "Covered by synthesis/resynthesis workflows.",
+    "to_spectrogram": "Related to EQ, filtering, and spectral processing.",
+    "to_spectrum": "Related to EQ, filtering, and spectral processing.",
+    "convolve": "Covered by Reverb.",
+    "formula": "Used by many Vocal Toolkit processing scripts.",
+}
 
 
 def slugify(text):
@@ -260,6 +299,292 @@ def topic_note_for(script, title):
     haystack = (script + " " + title).lower()
     notes = [note for key, note in TOPIC_NOTES if key in haystack]
     return notes[0] if notes else "Use the wrapper first for a faithful translation, then replace individual Praat commands with direct Parselmouth methods as you validate each step."
+
+
+def load_api_manifest():
+    if not API_MANIFEST.exists():
+        return None
+    return json.loads(API_MANIFEST.read_text(encoding="utf-8"))
+
+
+def owner_example_name(owner):
+    if owner == "Sound":
+        return "sound"
+    if owner == "parselmouth.praat":
+        return "praat"
+    return "obj"
+
+
+def function_status(entry, toolkit_terms):
+    name = entry["name"]
+    short = entry["short_name"]
+    if name in API_TO_TOOLKIT_HINTS:
+        return "Covered", API_TO_TOOLKIT_HINTS[name]
+    if short in API_TO_TOOLKIT_HINTS:
+        return "Covered", API_TO_TOOLKIT_HINTS[short]
+    tokens = [token for token in re.split(r"[^a-z0-9]+", short.lower()) if len(token) > 2]
+    if tokens and any(token in toolkit_terms for token in tokens):
+        return "Related", "A related term appears in the Vocal Toolkit command set or scripts."
+    return "Not in Vocal Toolkit", "No matching Vocal Toolkit command or script keyword was found."
+
+
+def parselmouth_function_page(entry, toolkit_terms):
+    status, note = function_status(entry, toolkit_terms)
+    owners = entry["owners"]
+    primary_owner = owners[0] if owners else "object"
+    short = entry["short_name"]
+    kind = entry["kind"]
+    lines = [
+        "# {0}".format(entry["name"]),
+        "",
+        "- Kind: `{0}`".format(kind),
+        "- Available on: {0}".format(", ".join("`{}`".format(owner) for owner in owners)),
+        "- Vocal Toolkit coverage: **{0}**".format(status),
+        "",
+        "## What It Does",
+        "",
+        entry.get("summary") or "This public Parselmouth API member is documented in the official API reference.",
+        "",
+        "## Tutorial Pattern",
+        "",
+        "```python",
+    ]
+    if entry["name"].startswith("praat."):
+        if short == "call":
+            lines += [
+                "import parselmouth",
+                "from parselmouth import praat",
+                "",
+                'sound = parselmouth.Sound("voice.wav")',
+                'pitch = praat.call(sound, "To Pitch", 0.01, 75, 600)',
+                'median_f0 = praat.call(pitch, "Get quantile", 0, 0, 0.5, "Hertz")',
+            ]
+        elif short == "run_file":
+            lines += [
+                "import os",
+                "import parselmouth",
+                "from parselmouth import praat",
+                "",
+                'sound = parselmouth.Sound("voice.wav")',
+                'script = os.path.join(os.environ["VOCAL_TOOLKIT_DIR"], "normalize.praat")',
+                "result = praat.run_file(sound, script)",
+            ]
+        else:
+            lines += [
+                "from parselmouth import praat",
+                "",
+                'script = "Create Sound from formula: \\"tone\\", 1, 0, 0.25, 44100, \\"0.2*sin(2*pi*220*x)\\""',
+                "result = praat.run(script)",
+            ]
+    elif kind == "property":
+        variable = owner_example_name(primary_owner)
+        if primary_owner == "Sound":
+            lines += [
+                "import parselmouth",
+                "",
+                '{0} = parselmouth.Sound("voice.wav")'.format(variable),
+                "value = {0}.{1}".format(variable, short),
+                "print(value)",
+            ]
+        else:
+            lines += [
+                "# Replace `obj` with an instance of {0}.".format(primary_owner),
+                "value = obj.{0}".format(short),
+                "print(value)",
+            ]
+    else:
+        variable = owner_example_name(primary_owner)
+        if primary_owner == "Sound":
+            lines += [
+                "import parselmouth",
+                "",
+                '{0} = parselmouth.Sound("voice.wav")'.format(variable),
+                "# Add required arguments according to the signature below.",
+                "result = {0}.{1}()".format(variable, short),
+                "print(result)",
+            ]
+        else:
+            lines += [
+                "# Replace `obj` with an instance of {0}.".format(primary_owner),
+                "# Add required arguments according to the signature below.",
+                "result = obj.{0}()".format(short),
+                "print(result)",
+            ]
+    lines += [
+        "```",
+        "",
+        "## Signature",
+        "",
+        "```text",
+        entry.get("signature") or "See the official API reference for overload details.",
+        "```",
+        "",
+        "## Toolkit Comparison",
+        "",
+        note,
+        "",
+        "[Back to Parselmouth API index](../index.md)",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def parselmouth_index(manifest, toolkit_terms):
+    lines = [
+        "# Parselmouth API Tutorials",
+        "",
+        "Generated from the public Parselmouth API manifest. The manifest was introspected from `praat-parselmouth {0}` with embedded Praat `{1}`.".format(
+            manifest.get("parselmouth_version", ""), manifest.get("praat_version", "")
+        ),
+        "",
+        "Source reference: [{0}]({0})".format(manifest.get("source_url", "")),
+        "",
+        "## Functions And Properties",
+        "",
+        "| API member | Kind | Owners | Vocal Toolkit coverage |",
+        "| --- | --- | --- | --- |",
+    ]
+    for entry in manifest["functions"]:
+        status, _ = function_status(entry, toolkit_terms)
+        lines.append("| [{0}](functions/{1}.md) | `{2}` | {3} | {4} |".format(
+            entry["name"],
+            slugify(entry["name"]),
+            entry["kind"],
+            ", ".join("`{}`".format(owner) for owner in entry["owners"][:5]),
+            status,
+        ))
+    lines += [
+        "",
+        "## Classes And Enums",
+        "",
+        "| Class or enum | Values |",
+        "| --- | --- |",
+    ]
+    for cls in manifest["classes"]:
+        values = ", ".join("`{}`".format(value) for value in cls.get("enum_values", [])) or ""
+        lines.append("| `{0}` | {1} |".format(cls["name"], values))
+    lines.append("")
+    return "\n".join(lines)
+
+
+def toolkit_terms(commands, scripts):
+    terms = set()
+    for script, command in commands.items():
+        parts = [script, command["title"]]
+        form = parse_form(PLUGIN_DIR / script)
+        parts.extend(field["name"] for field in form["fields"])
+        parts.extend(form["comments"])
+        for text in parts:
+            terms.update(token for token in re.split(r"[^a-z0-9]+", text.lower()) if len(token) > 2)
+    return terms
+
+
+def parameter_name(field):
+    name = field_variable_name(field["name"])
+    if field["type"] in {"choice", "optionmenu"} and not name.endswith("_index"):
+        name += "_index"
+    if keyword.iskeyword(name) or name in {"type", "format", "input", "file"}:
+        name += "_value"
+    return name
+
+
+def python_default_value(field):
+    raw = format_default(field)
+    if field["type"] == "boolean":
+        return "True" if raw == "1" else "False"
+    return raw
+
+
+def extension_function_name(script, command):
+    title = command["title"].replace("(in-place)", "").replace("(scale peak 0.99)", "")
+    base = slugify(title).replace("-", "_")
+    if command["kind"] == "copy" and not base.startswith("copy_"):
+        base = "copy_" + base
+    if not base:
+        base = slugify(script).replace("-", "_")
+    return base
+
+
+def toolkit_extension_module(commands, order):
+    lines = [
+        '"""Python functions for Vocal Toolkit commands implemented with Parselmouth."""',
+        "",
+        "from src.vocal_toolkit_parselmouth import run_toolkit_script",
+        "",
+        "",
+        "def _bool_arg(value):",
+        "    return int(bool(value))",
+        "",
+        "",
+    ]
+    for script in order:
+        command = commands[script]
+        fields = parse_form(PLUGIN_DIR / script)["fields"]
+        function_name = extension_function_name(script, command)
+        sound_args = ["source_sound", "target_sound"] if command["selected"] == 2 else ["sound"]
+        params = sound_args + ["{0}={1}".format(parameter_name(field), python_default_value(field)) for field in fields]
+        lines.append("def {0}({1}):".format(function_name, ", ".join(params)))
+        lines.append('    """Run `{0}` ({1}) through Parselmouth."""'.format(script, command["title"]))
+        selected = "[source_sound, target_sound]" if command["selected"] == 2 else "sound"
+        arg_exprs = []
+        for field in fields:
+            name = parameter_name(field)
+            if field["type"] == "boolean":
+                arg_exprs.append("_bool_arg({0})".format(name))
+            else:
+                arg_exprs.append(name)
+        if arg_exprs:
+            lines.append("    return run_toolkit_script(")
+            lines.append('        "{0}",'.format(script))
+            lines.append("        {0},".format(selected))
+            for expr in arg_exprs:
+                lines.append("        {0},".format(expr))
+            lines.append("    )")
+        else:
+            lines.append('    return run_toolkit_script("{0}", {1})'.format(script, selected))
+        lines += ["", ""]
+    return "\n".join(lines)
+
+
+def toolkit_missing_page(commands, order):
+    lines = [
+        "# Vocal Toolkit Commands Without Native Parselmouth Equivalents",
+        "",
+        "Every command below has a generated Python function in `src/vocal_toolkit_extensions.py`. Commands marked `Direct equivalent` have a compact native Parselmouth route; the others are implemented as Parselmouth wrappers around the original Praat script.",
+        "",
+        "| Command | Script | Status | Python function |",
+        "| --- | --- | --- | --- |",
+    ]
+    for script in order:
+        command = commands[script]
+        status = "Direct equivalent" if script in DIRECT_TOOLKIT_EQUIVALENTS else "Extension wrapper"
+        function_name = extension_function_name(script, command)
+        lines.append("| {0} | `{1}` | {2} | `vocal_toolkit_extensions.{3}` |".format(
+            command["title"], script, status, function_name
+        ))
+    lines.append("")
+    return "\n".join(lines)
+
+
+def parselmouth_missing_page(manifest, toolkit_terms):
+    missing = [entry for entry in manifest["functions"] if function_status(entry, toolkit_terms)[0] == "Not in Vocal Toolkit"]
+    lines = [
+        "# Parselmouth API Not Covered By Vocal Toolkit",
+        "",
+        "These public Parselmouth API members do not have an obvious Vocal Toolkit command or script keyword match. They are still documented in the Parselmouth API tutorial pages.",
+        "",
+        "| API member | Kind | Owners |",
+        "| --- | --- | --- |",
+    ]
+    for entry in missing:
+        lines.append("| [{0}](../parselmouth/functions/{1}.md) | `{2}` | {3} |".format(
+            entry["name"],
+            slugify(entry["name"]),
+            entry["kind"],
+            ", ".join("`{}`".format(owner) for owner in entry["owners"][:5]),
+        ))
+    lines.append("")
+    return "\n".join(lines)
 
 
 def page_for_script(script, command, form, helper_names):
@@ -547,37 +872,68 @@ for wav_path in sorted(INPUT_DIR.glob("*.wav")):
 '''
 
 
-def root_readme(commands, helper_count):
+def root_readme(commands, helper_count, manifest, toolkit_terms):
+    missing_count = 0
+    api_count = 0
+    class_count = 0
+    if manifest:
+        api_count = len(manifest["functions"])
+        class_count = len(manifest["classes"])
+        missing_count = sum(1 for entry in manifest["functions"] if function_status(entry, toolkit_terms)[0] == "Not in Vocal Toolkit")
     lines = [
-        "# Parselmouth Tutorials For Praat Vocal Toolkit",
+        "# Parselmouth Tutorials",
         "",
-        "This repository documents how to reproduce or call the Praat Vocal Toolkit scripts from Python with [Parselmouth](https://github.com/YannickJadoul/Parselmouth).",
+        "This repository documents the [Parselmouth](https://github.com/YannickJadoul/Parselmouth) Python API and shows how to reproduce or call Praat Vocal Toolkit scripts from Python.",
         "",
-        "The tutorials are generated from the local Vocal Toolkit plugin scripts in `/Users/neuroling/Downloads/Praat Vocal Toolkit/plugin_VocalToolkit`. They cover every user-facing command registered in `buttons.praat` plus the internal helper scripts that those commands call.",
+        "The Vocal Toolkit tutorials are generated from the local plugin scripts in `/Users/neuroling/Downloads/Praat Vocal Toolkit/plugin_VocalToolkit`. The Parselmouth tutorials are generated from `data/parselmouth_api_manifest.json`, which was introspected from the official `praat-parselmouth` package.",
         "",
         "## Start Here",
         "",
         "1. Install Parselmouth: `python -m pip install praat-parselmouth`.",
         "2. Point Python at the toolkit: `export VOCAL_TOOLKIT_DIR=\"/Users/neuroling/Downloads/Praat Vocal Toolkit/plugin_VocalToolkit\"`.",
         "3. Read [Parselmouth patterns](tutorials/parselmouth-patterns.md).",
-        "4. Pick a command from [the tutorial index](tutorials/index.md).",
+        "4. Pick a Parselmouth API member from [the Parselmouth index](tutorials/parselmouth/index.md) or a Vocal Toolkit command from [the toolkit index](tutorials/index.md).",
         "",
         "## What Is Included",
         "",
+        "- `{0}` Parselmouth API function/property tutorials across `{1}` classes and enums.".format(api_count, class_count),
         "- `{0}` user-facing Vocal Toolkit command tutorials.".format(len(commands)),
         "- `{0}` internal/helper script references.".format(helper_count),
         "- `src/vocal_toolkit_parselmouth.py`, a reusable Python wrapper for `praat.run_file`.",
+        "- `src/vocal_toolkit_extensions.py`, Python functions for all Vocal Toolkit commands that can be imported directly.",
         "- `examples/batch_process.py`, a minimal batch-processing example.",
+        "",
+        "## Coverage Checklist",
+        "",
+        "- Toolkit commands with compact direct Parselmouth equivalents: `{0}`.".format(len(DIRECT_TOOLKIT_EQUIVALENTS)),
+        "- Toolkit commands implemented as generated Python extension wrappers: `{0}`.".format(len(commands) - len(DIRECT_TOOLKIT_EQUIVALENTS)),
+        "- Parselmouth API members marked as not covered by Vocal Toolkit: `{0}`.".format(missing_count),
+        "",
+        "Full comparison tables:",
+        "",
+        "- [Vocal Toolkit commands without native Parselmouth equivalents](tutorials/comparisons/toolkit-not-in-parselmouth.md)",
+        "- [Parselmouth API not covered by Vocal Toolkit](tutorials/comparisons/parselmouth-not-in-toolkit.md)",
+        "",
+        "Major Parselmouth areas marked as outside the Vocal Toolkit scope include low-level object/file I/O, Matrix and Vector cell operations, Spectrum bin statistics, TextGrid conversion helpers, time-grid utility methods, and enum/metadata properties.",
         "",
         "## Compatibility Note",
         "",
-        "Parselmouth embeds Praat internally. The Vocal Toolkit `setup.praat` asks for Praat 6.4.20 or newer, so check `parselmouth.PRAAT_VERSION` if a script fails. Direct Python translations are included where practical; otherwise the pages show a faithful `praat.run_file` route.",
+        "The current manifest was generated from `praat-parselmouth {0}` with embedded Praat `{1}`. The Vocal Toolkit `setup.praat` asks for Praat 6.4.20 or newer, so check `parselmouth.PRAAT_VERSION` if a toolkit script fails in your environment.".format(
+            manifest.get("parselmouth_version", "") if manifest else "",
+            manifest.get("praat_version", "") if manifest else "",
+        ),
         "",
         "## Regenerate",
         "",
         "```bash",
         "VOCAL_TOOLKIT_DIR=\"/Users/neuroling/Downloads/Praat Vocal Toolkit/plugin_VocalToolkit\" \\",
         "python3 tools/generate_vocal_toolkit_tutorials.py",
+        "```",
+        "",
+        "To refresh the Parselmouth API manifest from an installed Parselmouth package:",
+        "",
+        "```bash",
+        "python3 tools/introspect_parselmouth_api.py",
         "```",
         "",
     ]
@@ -593,9 +949,11 @@ def main():
     if not PLUGIN_DIR.exists():
         raise SystemExit("Plugin directory not found: {}".format(PLUGIN_DIR))
 
+    manifest = load_api_manifest()
     commands, order = parse_buttons(PLUGIN_DIR / "buttons.praat")
     scripts = sorted(path.name for path in PLUGIN_DIR.glob("*.praat"))
     helper_scripts = [script for script in scripts if script not in commands]
+    terms = toolkit_terms(commands, scripts)
 
     user_index = ["# Vocal Toolkit Command Tutorials", ""]
     user_index.append("These pages are generated from `buttons.praat` in menu order. Copy commands expect two selected `Sound` objects; process commands usually accept one or more selected `Sound` objects.")
@@ -637,10 +995,25 @@ def main():
 
     write(ROOT / "tutorials" / "parselmouth-patterns.md", reference_page(scripts, commands))
     write(ROOT / "src" / "vocal_toolkit_parselmouth.py", wrapper_module())
+    write(ROOT / "src" / "vocal_toolkit_extensions.py", toolkit_extension_module(commands, order))
     write(ROOT / "examples" / "batch_process.py", example_batch())
-    write(ROOT / "README.md", root_readme(commands, len(helper_scripts)))
+    write(ROOT / "tutorials" / "comparisons" / "toolkit-not-in-parselmouth.md", toolkit_missing_page(commands, order))
 
-    print("Generated {} command tutorials and {} helper references.".format(len(commands), len(helper_scripts)))
+    if manifest:
+        write(ROOT / "tutorials" / "parselmouth" / "index.md", parselmouth_index(manifest, terms))
+        for entry in manifest["functions"]:
+            write(
+                ROOT / "tutorials" / "parselmouth" / "functions" / (slugify(entry["name"]) + ".md"),
+                parselmouth_function_page(entry, terms),
+            )
+        write(ROOT / "tutorials" / "comparisons" / "parselmouth-not-in-toolkit.md", parselmouth_missing_page(manifest, terms))
+
+    write(ROOT / "README.md", root_readme(commands, len(helper_scripts), manifest, terms))
+
+    api_count = len(manifest["functions"]) if manifest else 0
+    print("Generated {} command tutorials, {} helper references, and {} Parselmouth API tutorials.".format(
+        len(commands), len(helper_scripts), api_count
+    ))
 
 
 if __name__ == "__main__":
